@@ -1,171 +1,85 @@
-<img width="400" src="https://github.com/user-attachments/assets/44bac428-01bb-4fe9-9d85-96cba7698bee" alt="Tor Logo with the onion and a crosshair on it"/>
+![Firefox Logo with Crosshair](https://upload.wikimedia.org/wikipedia/commons/8/80/Firefox_logo%2C_2019.svg)
 
-# Threat Hunt Report: Unauthorized TOR Usage
-- [Scenario Creation](https://github.com/Alexander-Palomares/Threat-Hunting-Scenario-Tor/blob/main/threat-hunting-scenario-tor-event-creation.md)
+# Threat Hunt Report: Unauthorized FirefoxPortable.exe Usage
+- [Scenario Creation](https://github.com/Alexander-Palomares/Threat-Hunting-Scenario-Malicious-Firefox/edit/main/threat-hunting-scenario-creation.md)
+  
+## 🔧 Platforms and Tools Used
+- **Operating System:** Windows 10 (Azure-hosted Virtual Machines)
+- **EDR Platform:** Microsoft Defender for Endpoint
+- **Query Language:** Kusto Query Language (KQL)
+- **Software in Focus:** Firefox Portable
 
-## Platforms and Languages Leveraged
-- Windows 10 Virtual Machines (Microsoft Azure)
-- EDR Platform: Microsoft Defender for Endpoint
-- Kusto Query Language (KQL)
-- Tor Browser
+## Scenario
 
-##  Scenario
-
-Management suspects that some employees may be using TOR browsers to bypass network security controls because recent network logs show unusual encrypted traffic patterns and connections to known TOR entry nodes. Additionally, there have been anonymous reports of employees discussing ways to access restricted sites during work hours. The goal is to detect any TOR usage and analyze related security incidents to mitigate potential risks. If any use of TOR is found, notify management.
-
-### High-Level TOR-Related IoC Discovery Plan
-
-- **Check `DeviceFileEvents`** for any `tor(.exe)` or `firefox(.exe)` file events.
-- **Check `DeviceProcessEvents`** for any signs of installation or usage.
-- **Check `DeviceNetworkEvents`** for any signs of outgoing connections over known TOR ports.
+A manager reported possible policy violations after noticing large file uploads from a monitored device. This led to an investigation to identify any unauthorized software that may have been used to bypass security controls or anonymize traffic. During initial triage, analysts discovered that the employee had been using a portable browser that didn’t require installation, raising suspicions of evasion techniques.
 
 ---
 
-## Steps Taken
-
-### 1. Searched the `DeviceFileEvents` Table
-
-I began by querying the DeviceFileEvents table, filtering for any entries containing the string “tor”. This led to the discovery that user alexanderp had downloaded a Tor installer. Multiple Tor-related files were copied to the desktop, and a text file named tor-shopping-list.txt was created. These events began at 2025-04-14T23:00:23.1664006Z.
-
-**Query used to locate events:**
-
-```kql
-DeviceFileEvents
-| where DeviceName == "threat-hunt-lab"
-| where InitiatingProcessAccountName == "alexanderp"
-| where FileName contains "tor"
-| where Timestamp >= todatetime('2025-04-14T23:00:23.1664006Z')
-| order by Timestamp desc 
-| project Timestamp, DeviceName, ActionType, FileName, FolderPath, SHA256, account = InitiatingProcessAccountName
-```
-
-<img width="1213" alt="Screenshot 2025-04-17 at 3 27 17 PM" src="https://github.com/user-attachments/assets/f0a7809a-18b9-4066-9da5-95dad97c77c3" />
+## 📌 Objective
+To determine whether FirefoxPortable.exe—a portable, policy-evading version of the Firefox browser—was executed from a non-standard directory, possibly to evade detection or bypass software restrictions.
+  ### Plan:
+1. Identify abnormal process executions of `FirefoxPortable.exe`.
+2. Filter out legitimate installations (i.e., from `Program Files`).
+3. Correlate findings with device and user activity.
 
 ---
 
-### 2. Searched the `DeviceProcessEvents` Table
+## 🕵️‍♂️ Steps Taken
 
-After identifying the suspicious user alexanderp, I used the previously gathered context to query the DeviceProcessEvents table. I filtered for processes initiated by this user and command lines containing references to “tor”. This revealed the execution of tor-browser-windows-x86_64-portable-14.0.9.exe, a portable version of the Tor Browser for 64-bit Windows. This version runs without installation and supports silent execution.
-
-**Query used to locate event:**
+### Step 1: Query the `DeviceProcessEvents` Table
+We started by identifying executions of FirefoxPortable.exe from non-standard paths:
 
 ```kql
 DeviceProcessEvents
-| where DeviceName == "threat-hunt-lab"
-| where AccountName == "alexanderp"
-| where FileName == "tor-browser-windows-x86_64-portable-14.0.9.exe" 
-| project Timestamp, DeviceName, AccountName, ActionType, FileName, FolderPath, SHA256, ProcessCommandLine
+| where FileName == "FirefoxPortable.exe"
+| where FolderPath !contains "Program Files"
 ```
 
-<img width="884" alt="Screenshot 2025-04-17 at 3 41 52 PM" src="https://github.com/user-attachments/assets/85bc3b96-b717-4b95-9c7c-39a71bc09c23" />
+This revealed that a user executed FirefoxPortable from a location outside `Program Files`, indicating a likely portable use case bypassing install restrictions.
+
+### Step 2: Analyze Contextual Details
+After identifying the suspicious process execution, we examined fields like `InitiatingProcessAccountName`, `ProcessCommandLine`, and `FolderPath` to determine who ran the software and from where. This gives insight into user intent and method of delivery (USB, browser download, etc.).
+
+### Step 3: Timeline Reconstruction
+Using `Timestamp`, we correlated the activity to specific hours of the workday. This helped contextualize the timing and potential motive (e.g., after hours, during peak work time).
 
 ---
 
-### 3. Searched the `DeviceProcessEvents` Table for TOR Browser Execution
-
-I continued investigating the DeviceProcessEvents table for additional evidence that alexanderp had executed the Tor Browser. At 2025-04-14T23:05:26.9374591Z, I observed the launch of firefox.exe (used by the Tor Browser) followed by multiple instances of tor.exe, confirming active use.
-
-**Query used to locate events:**
-
-```kql
-DeviceProcessEvents
-| where DeviceName == "threat-hunt-lab"
-| where AccountName == "alexanderp"
-| where FileName has_any ("tor.exe", "firefox.exe", "tor-browser.exe")
-| project Timestamp, DeviceName, AccountName, ActionType, FileName, FolderPath, SHA256, ProcessCommandLine
-| order by Timestamp desc
-```
-<img width="1403" alt="Screenshot 2025-04-17 at 3 46 35 PM" src="https://github.com/user-attachments/assets/af276d39-1f43-42c8-a356-8969c0c0e3f0" />
-
----
-
-### 4. Searched the `DeviceNetworkEvents` Table for TOR Network Connections
-
-I queried the DeviceNetworkEvents table to identify any network activity indicating Tor Browser usage over known Tor-related ports. At 2025-04-14T23:06:06.81814Z, the user on the threat-hunt-lab device established a successful connection to 127.0.0.1 on port 9150. Additional connections were observed on port 9001, initiated by tor.exe, along with outbound traffic over port 443, confirming active Tor network communication.
-
-**Query used to locate events:**
-
-```kql
-DeviceNetworkEvents
-| where DeviceName == "threat-hunt-lab"
-| where InitiatingProcessAccountName == "alexanderp"
-| where RemotePort in ("9001", "9030", "9041", "9051", "9051", "9150", "80", "443")
-| where InitiatingProcessFileName in ( "firefox.exe", "tor.exe")
-| project Timestamp, ActionType, DeviceName, RemoteIP, RemotePort, InitiatingProcessFileName, InitiatingProcessAccountName, InitiatingProcessFolderPath
-| order by Timestamp desc 
-```
-<img width="1403" alt="Screenshot 2025-04-17 at 3 53 28 PM" src="https://github.com/user-attachments/assets/9c08233f-2993-405f-89db-b75fb2fb754a" />
-
----
-
-## Chronological Event Timeline 
-# 🛡️ Threat Hunt Report – Tor Browser Activity (User: alexanderp)
-
-## 📅 Date: April 14, 2025  
-**System Monitored:** `threat-hunt-lab`  
-**User Involved:** `alexanderp`  
-
----
-
-## 📌 Timeline of Events
-
-### 1. File Download – Tor Installer  
-**Timestamp:** `2025-04-14T23:00:23.1664006Z`  
-**Event:** User downloaded a Tor Browser installer to the desktop.  
-**Action:** File download detected.  
-**Details:**  
-- Multiple Tor-related files were copied to the desktop.  
-- A file named `tor-shopping-list.txt` was also created, potentially containing notes or a plan.
-
----
-
-### 2. Process Execution – Tor Installer Launched  
-**Timestamp:** *(Shortly after initial download)*  
-**Event:** Execution of `tor-browser-windows-x86_64-portable-14.0.9.exe` detected.  
-**Action:** Silent process execution.  
-**Details:**  
-- Portable version of Tor Browser executed.  
-- No standard installation required.
-
----
-
-### 3. Process Execution – Tor Browser Usage Confirmed  
-**Timestamp:** `2025-04-14T23:05:26.9374591Z`  
-**Event:** Tor Browser processes launched.  
-**Action:** Process creation for Tor executables.  
-**Details:**  
-- `firefox.exe` and `tor.exe` observed.  
-- Indicates successful launch and use of Tor Browser.
-
----
-
-### 4. Network Connection – Initial Tor Network Access  
-**Timestamp:** `2025-04-14T23:06:06.81814Z`  
-**Event:** Local connection established to `127.0.0.1:9150`.  
-**Action:** Tor proxy active.  
-**Process:** `tor.exe`
-
----
-
-### 5. Additional Network Connections – Tor Network Activity  
-**Timestamps:** *Shortly after 23:06:06Z*  
-**Event:** Outbound connections to Tor network observed.  
-**Action:** Multiple connections established.  
-**Details:**  
-- Connection to external IPs on port `9001`.  
-- HTTPS traffic over port `443`.  
-- Confirms active anonymized web access via Tor.
+## 📅 Example Timeline
+- **2025-04-14 22:58 UTC** — `FirefoxPortable.exe` executed from `C:\Users\alexanderp\Desktop\FirefoxPortable`.
+- **2025-04-14 22:59 UTC** — Network connections initiated by `firefox.exe`.
 
 ---
 
 ## 🧾 Summary
+The investigation confirmed the use of `FirefoxPortable.exe` from a non-standard folder by user `alexanderp`. While Firefox is not inherently malicious, the use of a portable version outside policy-approved directories raises concerns about intent and data exfiltration potential. The original alert about large data uploads further supports this concern.
 
-On **April 14, 2025**, user **`alexanderp`** downloaded and executed a portable version of the Tor Browser. The activity included launching Tor processes (`firefox.exe`, `tor.exe`), establishing internal proxy connections, and successfully connecting to the Tor network over known ports. The creation of a file titled `tor-shopping-list.txt` suggests intentional use or planning. Network telemetry confirms full browser execution and external communication through the Tor network.
+---
+
+## 📌 Response Taken
+- The endpoint was isolated.
+- The user’s manager was notified.
+- Forensic images were preserved for further analysis.
+- HR was consulted to determine next steps regarding Acceptable Use Policy violations.
 
 ---
 
-## Response Taken
-
-TOR usage was confirmed on the endpoint `threat-hunt-lab` by the user `employee`. The device was isolated, and the user's direct manager was notified.
+## ✍️ Created By
+**Author:** [Your Name Here]  
+**GitHub:** [YourGitHub](https://github.com/yourgithub)  
+**LinkedIn:** [YourLinkedIn](https://linkedin.com/in/yourlinkedin)  
+**Date:** 2025-05-05  
 
 ---
+
+## 📘 Notes
+- Portable applications are commonly used to bypass restrictions in enterprise environments.
+- Defender for Endpoint is capable of catching these if tuned appropriately.
+- Consider blocking execution from user directories in Group Policy or via AppLocker.
+
+---
+
+## 🔁 Revision History
+| Version | Description                    | Date         | Author        |
+|---------|--------------------------------|--------------|---------------|
+| 1.0     | Initial Report Creation        | 2025-05-05   | Your Name     |
