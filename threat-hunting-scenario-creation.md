@@ -1,6 +1,6 @@
-# 🕵️‍♂️ Threat Hunting Scenario – Firefox Portable Abuse
+# Threat Hunting Scenario – Firefox Portable Abuse
 
-## 🔍 Overview
+## Overview
 
 **Threat Name:** Unauthorized Use of Portable Firefox with Suspicious Download Activity  
 **Objective:** Identify the use of Firefox Portable to bypass monitoring tools and transfer data using cloud-based services.
@@ -10,7 +10,7 @@ A cybersecurity news alert detailed a rise in employees using portable browsers 
 
 ---
 
-## 🧪 Simulation Steps (What the "Bad Actor" Did)
+## Simulation Steps (What the "Bad Actor" Did)
 
 1. Downloaded Firefox Portable from:  
    `https://portableapps.com/apps/internet/firefox_portable`
@@ -33,7 +33,7 @@ A cybersecurity news alert detailed a rise in employees using portable browsers 
 
 ---
 
-## 📊 Detection Tables (Microsoft Defender XDR)
+## Detection Tables (Microsoft Defender XDR)
 
 | Table Name           | Description                                                                 |
 |----------------------|-----------------------------------------------------------------------------|
@@ -43,7 +43,7 @@ A cybersecurity news alert detailed a rise in employees using portable browsers 
 
 ---
 
-## 📌 KQL Queries
+## KQL Queries
 
 ### 1. Detect Firefox Portable Placed on Disk
 ```kql
